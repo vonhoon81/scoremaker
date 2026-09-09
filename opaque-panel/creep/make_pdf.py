@@ -8,13 +8,20 @@ that was on screen when the chapter started -- right to within the two bars a st
 """
 
 import os
+import sys
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 import stitch
 
-OUT = "/home/vonhoon/projects/scoremaker/Creep 기타 악보.pdf"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
+
+OUT = common.out_pdf("Creep 기타 악보.pdf")
 TITLE = "Creep 기타 악보"
 SUB1 = "Radiohead · ♩= 76 · Standard Tuning (E A D G B E)"
 SUB2 = ("레슨 영상은 곡 전체를 연주하지 않고 반복되는 주요 구간만 다룹니다 — "
@@ -44,19 +51,7 @@ STRETCH = 1.12  # horizontal-only stretch allowed to justify a line to the right
 NUM_PAD = 32  # bar numbers straddle their bar line; keep them with the bar they open
 BOOST = 1.35  # the staff lines are drawn lighter than the marks; even them out for print
 
-CJK_VF = "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc"
-NANUM = "/usr/share/fonts/naver-nanum-gothic-fonts/NanumGothic%s.ttf"
-
-
-def font(size, weight="Regular"):
-    if os.path.exists(CJK_VF):
-        f = ImageFont.truetype(CJK_VF, size)
-        f.set_variation_by_name(weight)
-        return f
-    path = NANUM % ("" if weight == "Regular" else weight)
-    if os.path.exists(path):
-        return ImageFont.truetype(path, size)
-    raise SystemExit("no CJK font found")
+font = common.font  # resolves a CJK face per platform
 
 
 # ---------------------------------------------------------------- geometry

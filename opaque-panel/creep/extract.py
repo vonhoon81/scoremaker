@@ -26,9 +26,12 @@ import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))  # where the source videos live
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
 VIDEO = os.path.join(ROOT, 'Radiohead - Creep (Guitar lesson with TAB).mp4')
-WORK = "/tmp/sm5"
+WORK = common.work("sm5")
 
 W, H = 1920, 1080
 BAND_Y, BAND_H = 612, 468  # the black tab panel; below it is the frame edge

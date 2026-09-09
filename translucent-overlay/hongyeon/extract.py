@@ -19,9 +19,12 @@ import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))  # where the source videos live
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
 VIDEO = os.path.join(ROOT, '648.안예은 - 홍연 (Guitar Tab).mp4')
-WORK = "/tmp/sm"
+WORK = common.work("sm")
 
 SCAN_FPS = 4  # page changes are >=4s apart, so 4fps never misses one
 SCAN_W = 640

@@ -1,116 +1,393 @@
 # scoremaker
 
-Turns a guitar-lesson video into a printable A4 tab score: find the frames where the tab
-overlay holds still, composite each of those "pages" into a clean image, work out how the
-pages overlap, and re-flow the whole score into justified systems.
+Turns a guitar-lesson video into a printable A4 tab score. The lesson videos show the tab
+as an overlay that holds still for a few seconds, flips to the next few bars, and repeats.
+This finds those still frames, composites each one into a clean image, works out how
+consecutive pages overlap, and re-engraves the whole thing into justified systems.
 
-Every song has its own directory because every video needs its own constants, but they
-are all the same three stages, run in this order from inside the song's directory:
+Nine videos have been through it so far. Every one needed different constants, and three
+needed a different *method*. The point of this README is that the tenth should be faster.
 
-    extract.py    video  -> /tmp/smN/pages/*.npy   one composited page per flip
-    stitch.py     pages  -> the score in order     bar boundaries, overlaps resolved
-    make_pdf.py   bars   -> ../../<song> 악보.pdf   line breaking and layout
+---
 
-`extract.py` caches its scan and its pages under `/tmp/smN`, so re-running `stitch.py` or
-`make_pdf.py` after a tweak costs nothing. Delete the cache to force a re-extract. The
-source videos live in the repo root; `ROOT` in each `extract.py` points at it.
+## Dependencies
+
+```
+pip install numpy pillow yt-dlp curl_cffi
+```
+
+plus **ffmpeg** and **ffprobe** on `PATH` — every stage shells out to them.
+
+`download.py` on its own needs only `yt-dlp` and `curl_cffi`: it deliberately does not
+pull in numpy or Pillow, so fetching a video works on a bare machine.
+
+| | why |
+|---|---|
+| `numpy` | all the image maths |
+| `pillow` | reading/writing frames, drawing the title block, writing the PDF |
+| `yt-dlp` | `download.py` |
+| `curl_cffi` | lets yt-dlp impersonate a browser; **without it YouTube serves 20 MiB and then answers HTTP 403.** Retries, smaller chunks and fresh URLs all hit the same wall, and hammering it gets the IP blocked for about ten minutes |
+| `ffmpeg` / `ffprobe` | frame extraction and metadata |
+
+A CJK font is needed for the title block (Korean and Japanese). Found automatically:
+Noto Sans CJK or Nanum Gothic on Linux, Malgun Gothic or Yu Gothic on Windows, Apple SD
+Gothic Neo on macOS. Override with `SCOREMAKER_FONT` (and optionally
+`SCOREMAKER_FONT_BOLD`) if none of those is installed.
+
+Windows, macOS and Linux all work: `common.py` holds the only platform-specific bits
+(where videos live, where the scratch cache goes, which font to use). Scratch goes to the
+system temp directory, so `/tmp/sm9` on Linux and `%LOCALAPPDATA%\Temp\sm9` on Windows.
+Note that Windows has a 260-character path limit by default and these video filenames are
+long — keep the checkout somewhere short like `C:\src\scoremaker`.
+
+---
+
+## Quick start
+
+```
+python download.py "https://www.youtube.com/watch?v=..."   # 1080p, video only
+python probe.py "<the filename it printed>"                # what layout is this?
+```
+
+Then copy the closest existing pipeline, paste in the constants `probe.py` printed, and
+run its three stages from inside its own directory:
+
+```
+cd translucent-overlay/newsong
+python extract.py     # video  -> <temp>/smN/pages/*.npy   one composite per page
+python stitch.py      # pages  -> the score, in order, bars located
+python make_pdf.py    # bars   -> ../../<song> 악보.pdf
+```
+
+`extract.py` caches its scan and its pages, so re-running `stitch.py` or `make_pdf.py`
+after a tweak is free. Delete the scratch directory to force a re-extract.
+
+---
+
+## Getting the video, and getting frames out of it
+
+### Downloading
+
+```
+python download.py "https://www.youtube.com/watch?v=..."
+python download.py <url> --with-audio    # mux audio in, to play along with
+python download.py <url> --height 720    # smaller, if 1080p is overkill
+python download.py <url> --force         # re-download over an existing file
+```
+
+It prints the filename it saved and the exact line to paste into the new pipeline:
+
+```
+downloaded 42 MB
+  /home/you/scoremaker/【TAB】Some Song [abc123].mp4
+
+In the new pipeline's extract.py:
+  VIDEO = common.video("【TAB】Some Song [abc123].mp4")
+```
+
+What it does under the hood, and why:
+
+- **Video only, no audio.** The format string is
+  `bv*[height<=1080][ext=mp4]/bv*[height<=1080]/b[height<=1080]`. Nothing in the pipeline
+  reads the audio track — every stage works on pixels — so pulling audio roughly doubles
+  the download for nothing. `--with-audio` switches to `bv*+ba/b` if you want to listen
+  while reading the score; that needs ffmpeg to mux.
+- **1080p matters.** The tab digits are 10–15px tall at 1080p. At 720p a barline is
+  sub-pixel and the barline-span test that finds bar boundaries stops working.
+- **`--impersonate Chrome`, when curl_cffi is installed.** Without it YouTube serves
+  exactly 20 MiB and then answers `HTTP Error 403: Forbidden`. Retries,
+  `--http-chunk-size`, fresh signed URLs and DASH fragments all hit the same wall, and
+  hammering it gets the IP blocked for about ten minutes. `download.py` runs yt-dlp as a
+  module of the *current* interpreter, so importing `curl_cffi` here is a valid test of
+  whether yt-dlp will have it; if a standalone `yt-dlp` on `PATH` is used instead it asks
+  that binary via `--list-impersonate-targets`. When impersonation is unavailable it says
+  so up front rather than dying at 20 MiB.
+- **`--windows-filenames` on every platform.** yt-dlp sanitises titles differently per
+  OS, and each pipeline refers to its video by exact filename. Without this flag the same
+  URL yields one name on Linux and a different one on Windows, and the pipeline breaks
+  when moved. (`/` and `|` already become `⧸` and `｜` everywhere; this pins down `:`,
+  `?`, `*`, `"`, `<`, `>` too.)
+- **Metadata first, and `--print filename` specifically.** It asks yt-dlp for the final
+  filename before downloading: one metadata request, and it lets an existing file be
+  skipped. It has to be `--print filename` against the real `-o` template --
+  `--print "%(title)s [%(id)s].%(ext)s"` hands back the *unsanitised* title, and a title
+  containing a slash then reads as a directory separator and buries the download in a new
+  subdirectory named after half the title.
+- **Already-downloaded videos are matched by id**, not by name, because a video's title
+  can change upstream and re-fetching 200 MB to discover that would be rude. Pass
+  `--force` to download anyway.
+
+A cheap trick when deciding whether a video is worth downloading at all: storyboard
+frames (`yt-dlp -f sb0`) come from `i.ytimg.com`, are never throttled, and show the
+layout well enough to tell where the tab sits.
+
+### Pulling frames
+
+Every stage shells out to ffmpeg and reads **raw frames over a pipe** rather than writing
+PNGs to disk. A scan of a three-minute video at 5fps is ~900 full-width frames; as PNGs
+that is a gigabyte of I/O for data used once, and as `rawvideo` it is nothing on disk at
+all. The shape used throughout:
+
+```python
+cmd = ["ffmpeg", "-v", "error"]
+if t0 is not None:
+    cmd += ["-ss", f"{t0:.3f}", "-t", f"{dur:.3f}"]     # a single page's window
+cmd += ["-i", VIDEO,
+        "-vf", f"fps={fps:.4f},crop={W}:{PANEL_H}:0:{PANEL_Y}",
+        "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+n = W * PANEL_H * 3
+p = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=n * 4)
+while True:
+    buf = p.stdout.read(n)
+    if len(buf) < n:
+        break
+    yield np.frombuffer(buf, np.uint8).reshape(PANEL_H, W, 3).max(axis=2)
+```
+
+Points worth keeping:
+
+- **`crop` before anything else.** Only the tab band is ever needed, and cropping in
+  ffmpeg keeps the pipe (and the numpy arrays) an eighth of the size.
+- **`fps=` picks the sample count.** For a page composite, ask for exactly the number of
+  samples wanted across the page's span: `fps = SAMPLES / (b - a)`. For a page scan, 5fps
+  is plenty — pages last seconds.
+- **`-ss` before `-i`** so ffmpeg seeks rather than decoding from the start. It seeks to a
+  keyframe, so a window shorter than about 1s can come back with fewer frames than asked
+  for; ask for a generous window and index into it instead of assuming a count.
+- **Reduce to one channel early** (`.max(axis=2)` for white ink, `.min(axis=2)` for dark
+  ink on white) unless colour is actually needed. Kaiju2 keeps colour because its bar
+  numbers are red and they are what you navigate a 137-bar score by.
+- **Do not downscale to save time.** A playhead is often a 1px line and a barline 1–2px;
+  halving the resolution blends them into the panel and they stop being detectable. This
+  was learned by trying: at half resolution Kaiju2's highlight box vanished entirely.
+
+---
+
+## Which parts are automated, and which need the agent
+
+This matters more than it might seem. The mechanical parts are genuinely hands-off, but
+three or four judgement calls sit in the middle of the pipeline, and every one of them
+was originally got wrong by trusting a number instead of looking at the picture.
+
+### Automated — trust these
+
+| step | tool | how reliable |
+|---|---|---|
+| Download at 1080p, name the file deterministically across OSes | `download.py` | reliable |
+| Video metadata, sample frames, temporal-median image | `probe.py` | reliable |
+| **Staff geometry** — rows, spacing, line count, top-or-bottom | `probe.py` | exact on 3 of the 4 videos tested; on Creep it locked onto every *other* line and reported half the count at double the spacing, so check it against `static.png` |
+| **Panel polarity** — dark ink on light, or light on dark | `probe.py` | exact on all four |
+| **Smooth scroll vs page flips** | `probe.py` | decisive. Correlates the band with itself 0.2s later, well inside a page: a shift of 0 means static pages |
+| Page compositing, once the constants are right | `extract.py` | reliable |
+| Barline detection, bar segmentation | `stitch.py` | reliable, but see *barline nicks* below |
+| Overlap between consecutive pages; panorama registration | `stitch.py` | reliable, with the dilated metric below |
+| Line breaking, justification, pagination, PDF | `make_pdf.py` | reliable |
+
+### The agent's job — do not automate these
+
+1. **Decide translucent vs opaque by looking.** `probe.py` reports how much moves inside
+   the panel, but that number cannot tell a translucent overlay from an opaque panel with
+   a big moving highlight: Nanmonee (translucent) reads 9.4 and Kaiju2 (opaque white)
+   reads 6.2. Open a sample frame and answer one question — *can you see the guitar
+   through the tab?* That single look picks the family, and the two families need
+   different extraction code.
+
+2. **Choose the page-segmentation signal when the sweep fails.** `probe.py` sweeps ink
+   thresholds and reports the separation between a page flip and a quiet frame. When it
+   finds one (Creep: 2499:1) the flip times are trustworthy. When it does not (Nanmonee
+   4.2:1, Kaiju2 4.3:1) something moves within a page as much as a flip does, and the
+   agent has to find a cleaner signal — subtract the median background first, restrict to
+   the staff rows, or diff a mask of the engraving only. This is where most of the
+   per-video work actually goes.
+
+3. **Read the bar numbers to verify the assembly.** This is the single most valuable check
+   and there is no OCR here. Dump the row just above the staff across the whole assembled
+   score, look at it, and confirm the numbers run 1..N with no gaps and no repeats. It
+   caught real bugs every time: a panorama that had OR'd two different stretches of score
+   together, a missed barline, a page placed at the wrong offset. Independent
+   cross-checks: bar count against the last printed number, and total played bars × tempo
+   against the video's runtime (Pretender came to 294s of music against a 295s video).
+
+4. **Work out the score's structure and the play order.** Repeat signs, first/second-time
+   voltas, a segno, a D.S. al Coda, "Da Coda", multi-bar rests, practice repeat counts
+   like "12x". These change what the video's page order *means*: Horizon plays bars 26-56
+   twice, Pretender jumps segno→coda→back. The video's page order plus the printed marks
+   together give the play order, and only an agent can put those together. Say what was
+   inferred and what was read off the page.
+
+5. **Trim the band and judge the output.** How far above the staff to keep (bar numbers?
+   chord symbols? section labels? a tempo mark?), whether leftover smears are acceptable,
+   whether a label came out too faint, and how big to print it (`LINES_PER_PAGE` trades
+   readability against page count). All visual calls.
+
+6. **Name the score and file it.** Also the agent's call.
+
+---
 
 ## The two families
 
-The thing that decides how much work extraction is: **can you see the video through the
-tab overlay?**
+The question that decides how much work extraction is: **can you see the video through
+the tab overlay?**
 
 ### `opaque-panel/` — the panel hides the video
 
 A threshold alone separates the ink. The only moving things are the playhead and any
-current-bar highlight, and a temporal statistic over the page's frames removes them:
-take the **max** where the ink is dark on a light panel, the **min** where it is light on
-a dark one, and the **median** when neither works.
+current-bar highlight, and a temporal statistic over the page's frames removes them: take
+the **max** where the ink is dark on a light panel, the **min** where it is light on a
+dark one, and the **median** when neither works.
 
 | | tab | panel | how it advances | notes |
 |---|---|---|---|---|
-| `kaiju/` | bottom | white, dark ink | flips to a **fresh** set of bars, no overlap | temporal max kills the red playhead and the bar highlight for free. Pages just concatenate. *Source video deleted — superseded by `kaiju2`.* |
-| `kaiju2/` | bottom | white, dark ink | flips at the **second-to-last** bar, so the trailing partial bar is the next page's first — a **1-bar overlap** | temporal **median**: max would turn every played digit red, min would keep every highlight box. Keep only bars with a barline on both sides and the duplicate drops out. |
-| `betelgeuse/` | bottom | white, dark ink | flips a system at a time, **no overlap** | the song is played three times, once per guitar part; the three passes flip at the same offsets, which is what lets them be stacked into one score. |
+| `kaiju/` | bottom | white, dark ink | flips to a **fresh** set of bars, no overlap | temporal max kills the red playhead and the bar highlight for free; pages just concatenate. *Source video deleted — superseded by `kaiju2`.* |
+| `kaiju2/` | bottom | white, dark ink | flips at the **second-to-last** bar, so the trailing partial bar is the next page's first — a **1-bar overlap** | temporal **median**: max would turn every played digit red, min would keep every highlight box. Keep only bars with a barline on both sides and the duplicate drops out. 137 bars. |
+| `betelgeuse/` | bottom | white, dark ink | flips a system at a time, **no overlap** | the song is played three times, once per guitar part; the passes flip at the same offsets, which is what lets them be stacked into one score. |
 | `creep/` | bottom | black, white ink | steps ~2 bars at a time, **overlapping** | the layout *switches*: one full-width panel for most of it, two side-by-side panels through the both-guitars chorus, each its own stream of pages. |
-| `horizon/` | **top** | light, dark ink | flips with a **variable** overlap (0-2 bars) | the video plays a **repeat** — bars 26-56 twice — so pages split into two passes that have to be merged. Junctions are resolved by overlaying pages at the shifts that line their barlines up. |
+| `horizon/` | **top** | light, dark ink | flips with a **variable** overlap (0-2 bars) | notation staff + Korean lyrics + chords + tab, 438px tall. Plays a **repeat** — bars 26-56 twice — so pages split into two passes that have to be merged. 89 bars. |
 
 ### `translucent-overlay/` — the video shows through
 
-The ink has to be separated from a moving performance behind it. Two approaches, and
-which one works depends on whether the room moves:
+The ink has to be separated from a moving performance behind it. Which approach works
+depends on whether the room moves:
 
 - **temporal min over the page** (`hongyeon`, `jjanggu`) — the tab is static and the
   player is not, so the per-pixel minimum over a page pushes the bleed-through toward its
   darkest, and a top-hat removes what is left.
 - **median background subtraction** (`pretender`, `nanmonee`) — when the room barely
-  moves, a temporal median across the *whole video* is an excellent estimate of
-  everything that is not score, because the score is the only thing that changes every
-  page. Subtracting it isolates the ink almost perfectly. The static staff lines go with
-  the background and are redrawn from their measured rows.
+  moves (frames a second apart differing over ~1.5% of pixels), a temporal median across
+  the *whole video* is an excellent estimate of everything that is not score, because the
+  score is the only thing that changes every page. Subtracting it isolates the ink almost
+  perfectly.
 
 | | tab | overlay | how it advances | notes |
 |---|---|---|---|---|
 | `hongyeon/` | bottom half | light, ~50% white | static pages | white top-hat recovers the half-opacity staff lines and chord grids. |
 | `jjanggu/` | bottom strip | dark | flips every few seconds | where the guitar body glows through, the overlay's contrast is scaled down, so every mark's top-hat response is divided by a per-column staff-line reference that measures that attenuation exactly. *Source video is outside the repo.* |
-| `pretender/` | bottom | dark | flips, and **jumps**: a segno, a D.S. al Coda and practice loops (12x, 8x, 9x) | pages are grouped into **runs** — stretches flipped through without a jump — and the runs are registered into one **panorama**. Single pages cannot be placed: the riff repeats enough that one page matches several positions. |
-| `nanmonee/` | bottom | dark | flips **straight through**, ~4 of the 7 bars a page shows | chord symbols sit *above* the panel over live video, where white text on the guitar's white body has almost no contrast; ink is divided by the headroom the background left it (255 − background) to recover them. |
+| `pretender/` | bottom | dark | flips, and **jumps**: a segno, a D.S. al Coda and practice loops (12x, 8x, 9x) | pages are grouped into **runs** — stretches flipped through without a jump — and the runs are registered into one **panorama**. Single pages cannot be placed: the riff repeats enough that one page matches several positions. 62 bars written, 58 bar boxes (a five-bar multi-rest). |
+| `nanmonee/` | bottom | dark | flips **straight through**, ~4 of the 7 bars a page shows | chord symbols sit *above* the panel over live video. 115 bars. |
 
-## Composites: percentile, not median
+---
 
-For a translucent overlay, what to combine the page's frames with matters more than it
+## What was learned the hard way
+
+### Compositing a page: percentile, not median
+
+For a translucent overlay, what you combine the page's frames *with* matters more than it
 looks. A median leaves a grey smear wherever the guitar drifted. A **low percentile**
 (5th–10th of ~30 frames) does not: the engraving is in *every* frame of a page, while the
 fretting hand, the neck under vibrato and the playhead are each in only some. The same
-trick removes the playhead for free, so it never has to be detected.
+trick removes the playhead for free, so it never has to be detected at all.
 
-## Joining pages
+For an opaque panel, pick the temporal statistic by polarity, and think about what else
+moves. On Kaiju2 the obvious max would have turned every digit the playhead had passed
+over permanently red, because the video colours the currently-sounding digits; the median
+was right.
 
-Whatever the overlay, the score has to be put back together without duplicating or
-dropping a bar. In rough order of how much machinery it takes:
+### Staff lines belong to the background
+
+They never move, so a median background subtraction removes them along with the room.
+Redraw them from their measured rows — which also gives a crisper printed line. Two
+consequences:
+
+- **Barline nicks.** A barline crossing a staff line gets its ink cancelled there too, so
+  every barline comes out with 1px gaps and a run-length test fails to see it. Close
+  gaps of 1–2px before measuring runs.
+- Redraw at `int(y)`, not `round(y)`, so the drawn line sits on the rows the source drew
+  it on and covers those gaps.
+
+### White ink over a bright background
+
+How much ink a pixel can possibly show is `255 - background`. Over a dark panel that is
+nearly the full range; a chord symbol printed over the guitar's white body has about 45
+levels to work with and comes out pale grey at any fixed gain. Dividing the ink by that
+headroom recovers those labels without touching the ones over the dark panel. Where the
+background is genuinely white the contrast is ~2% and nothing can be recovered — say so
+rather than chasing it.
+
+### Joining pages, in order of how much machinery it takes
 
 1. **Concatenate** — pages do not overlap at all (`kaiju`, `betelgeuse`).
 2. **Complete bars only** — pages overlap by exactly the partial bar at the edge, so
-   keeping bars that have a barline on both sides is enough (`kaiju2`).
+   keeping bars with a barline on both sides is enough (`kaiju2`). This is what makes the
+   apparent "repeat of the last bar at every scroll" disappear.
 3. **Measure the junction** — overlay consecutive pages at the shifts that align their
-   barlines and take the best; the overlap in bars falls out (`horizon`, `creep`).
+   barlines and take the best; the overlap in bars falls out (`horizon`, `creep`). Do not
+   assume a fixed advance: bar widths are content-driven (149–559px on Horizon) so a page
+   holds three or four bars and the same bar is sometimes complete on two pages.
 4. **Panorama** — register every page into one absolute coordinate system and take the
    per-pixel median of everything covering a column. Needed when the page order is not
    monotonic, and worth it anyway: each stretch of score is seen by several pages, and
    residue that survived extraction sits somewhere different on each (`pretender`,
    `nanmonee`).
 
-For (3) and (4), compare masks **against each other's dilation** so 1px registration
-jitter does not count. Without that, a true flip and a jump to a repeat sign score close
-enough together to be confused; with it, flips land under 0.05 and jumps above 0.14.
+Panorama gotchas, both of which produced visibly wrong output first:
 
-## Layout
+- Write **first-write-wins, never OR'd**. A union of two different stretches of score
+  poisons every later registration against that region.
+- Composite over intervals where the set of contributing pages is **constant**. Padding a
+  block with white for the pages that only half cover it lets those white pixels vote in
+  the median and greys out everything they touch.
+- Inset each page's own edges (~12px) before it contributes: a glyph the page edge cut in
+  half would otherwise outvote the pages that show it whole.
+
+### Compare masks against each other's dilation
+
+For any page-to-page matching, compare each ink mask against the *other's* 1px dilation so
+registration jitter does not count. Without it a true flip and a jump to a repeat sign
+score close enough together to be confused; with it, flips land under 0.05 and jumps above
+0.14. This is what made Pretender's D.S. detectable at all.
+
+### Register runs, not pages
+
+When a video jumps around the score, a single page cannot be placed reliably — a riff-based
+arrangement repeats enough that one page matches several positions. A *run* (a maximal
+stretch flipped through without a jump) is 4000–9000px of score and places with no contest.
+
+### Layout
 
 `make_pdf.py` re-engraves the line breaks rather than reusing the video's: a DP picks the
 breaks that minimise the squared deviation from a target line width, then each line is
 stretched horizontally to the exact content width. Because the breaks are balanced, that
 stretch stays within a few percent of the fixed vertical scale, so nothing visibly
-distorts. The scale itself comes from `LINES_PER_PAGE` — choose how many systems a page
-should hold and the target width follows.
+distorts. The scale itself comes from `LINES_PER_PAGE`.
 
-Two things worth keeping when adapting it:
+- Use **floor, not round**, for the line height. One pixel too tall costs a whole page of
+  capacity.
+- **Force a system break at repeat signs**, so a repeat opens a system instead of being
+  buried mid-line where a reader will miss it. Thin them out if the chart has many
+  (Pretender has eight, several a bar apart, and honouring all of them left single-bar
+  lines).
+- **Keep breaks out of marks drawn above the staff.** Anything horizontal reaching across
+  a bar boundary gets sliced: "Da Coda" printed as "Da Cod" with a stray "a" opening the
+  next system. Detect marks as gap-tolerant column runs (letters have gaps) and charge the
+  DP for breaking inside one. When a repeat sign and a mark conflict, the mark wins.
+- **Bar numbers straddle their barline** (roughly −8 to +10 px). Cut bars ~10px to the
+  left of the barline or every bar carries half of the *next* bar's number.
+- Give the last bar of each line the barline that closes it, and blank the next bar's
+  number out of that padding.
+- Merge a section's closing double bar and the next system's opening barline (~57px apart)
+  into the following bar rather than dropping the gap — it holds the new system's clef.
+- Do not print a per-line bar range if the score has multi-bar rests: those make bar
+  *boxes* disagree with the numbers printed on the staff, and a wrong label is worse than
+  none.
 
-- **Force a system break at repeat signs** so a repeat opens a system instead of being
-  buried mid-line. Thin them out if the chart has many (`pretender` has eight).
-- **Keep breaks out of marks drawn above the staff.** Anything horizontal that reaches
-  across a bar boundary gets sliced: "Da Coda" printed as "Da Cod" with a stray "a"
-  opening the next system. Detect the marks as gap-tolerant column runs and charge the DP
-  for breaking inside one.
+### A note on scrolling
 
-## A note on scrolling
+None of the nine videos actually scrolls smoothly — all of them flip between static pages,
+including ones that look like a continuous scroll at first. Pretender was checked
+frame-by-frame: frames a second apart are identical. `probe.py` settles it with the
+correlation test. If a video really does scroll, none of the stitching here applies; you
+would register every *frame* into a panorama instead of every page.
 
-None of these videos actually scrolls smoothly — all nine flip between static pages, even
-the ones that look like a continuous scroll at first (`pretender` was checked: frames a
-second apart are identical). Verify before assuming: sample the tab band a second apart
-and diff it. If it really does scroll, none of the stitching here applies; you would
-register every frame into a panorama instead of every page.
+---
 
-## `/tmp` scratch directories
+## Scratch directories
 
-`sm` hongyeon · `sm2` jjanggu · `sm3` kaiju · `sm4` betelgeuse · `sm5` creep ·
-`sm6` kaiju2 · `sm7` horizon · `sm8` pretender · `sm9` nanmonee
+Under the system temp directory: `sm` hongyeon · `sm2` jjanggu · `sm3` kaiju ·
+`sm4` betelgeuse · `sm5` creep · `sm6` kaiju2 · `sm7` horizon · `sm8` pretender ·
+`sm9` nanmonee · `probe` probe.py.
+
+## What is not in the repo
+
+Source videos and the generated PDFs. Neither is ours to redistribute, and the largest
+video is past GitHub's 100 MB file limit. `download.py` fetches a video back; the scores
+are rebuilt by running the three stages.

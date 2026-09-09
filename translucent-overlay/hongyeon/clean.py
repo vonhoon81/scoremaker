@@ -5,9 +5,9 @@ import glob
 
 import numpy as np
 
-from extract import FLOOR, drop_video_leftovers
+from extract import FLOOR, WORK, drop_video_leftovers
 
-for f in sorted(glob.glob("/tmp/sm/pages/*.npy")):
+for f in sorted(glob.glob(f"{WORK}/pages/*.npy")):
     a = np.load(f)
     before = (a >= FLOOR).sum()
     a = drop_video_leftovers(a)

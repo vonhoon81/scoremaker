@@ -31,9 +31,12 @@ import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))  # where the source videos live
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
 VIDEO = os.path.join(ROOT, '사건의 지평선 - 윤하 [ 일렉기타 입문곡 시리즈 #022 ] [imfG3LKUxQ0].mp4')
-WORK = "/tmp/sm7"
+WORK = common.work("sm7")
 
 W, PANEL_H = 1920, 444  # the score panel, pinned to the top of the frame
 

@@ -10,13 +10,20 @@ system has to be trimmed on its own rather than to one shared box.
 
 import glob
 import os
+import sys
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 import extract
 
-OUT = "/home/vonhoon/projects/scoremaker/괴수의 하나우타 기타 악보.pdf"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
+
+OUT = common.out_pdf("괴수의 하나우타 기타 악보.pdf")
 TITLE = "괴수의 하나우타 기타 악보"
 SUBTITLE = "Vaundy · Kaiju no Hanauta · 채보 전체 악보"
 
@@ -33,19 +40,7 @@ PAD = 6
 BOOST = 2.4  # the source draws staff lines at ~234 grey; darken toward the paper white
 
 
-CJK_VF = "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc"
-NANUM = "/usr/share/fonts/naver-nanum-gothic-fonts/NanumGothic%s.ttf"
-
-
-def font(size, weight="Regular"):
-    if os.path.exists(CJK_VF):
-        f = ImageFont.truetype(CJK_VF, size)
-        f.set_variation_by_name(weight)
-        return f
-    path = NANUM % ("" if weight == "Regular" else weight)
-    if os.path.exists(path):
-        return ImageFont.truetype(path, size)
-    raise SystemExit("no CJK font found")
+font = common.font  # resolves a CJK face per platform
 
 
 def load():

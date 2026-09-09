@@ -32,9 +32,12 @@ import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))  # where the source videos live
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
 VIDEO = os.path.join(ROOT, 'Official Hige Dandism - Pretender ｜ 일렉기타 + TAB악보 [unj2QL-yi7Y].mp4')
-WORK = "/tmp/sm8"
+WORK = common.work("sm8")
 
 W = 1920
 PANEL_Y, PANEL_H = 812, 268  # the translucent panel, from its top edge to the frame's

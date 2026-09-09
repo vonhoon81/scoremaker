@@ -11,9 +11,11 @@ import glob
 
 import numpy as np
 
+import extract
+
 from despeckle import despeckle
 
-WORK = "/tmp/sm2"
+WORK = extract.WORK
 SOLID = 0.35
 DUP_IOU = 0.75  # above this at zero shift, two pages are the same system
 MIN_OV, MAX_OV = 120, 1900

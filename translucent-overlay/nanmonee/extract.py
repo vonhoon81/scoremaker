@@ -31,9 +31,12 @@ import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))  # where the source videos live
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
 VIDEO = os.path.join(ROOT, '【TAB】Nanmonee (なんもねえ) ⧸ Wasureranneyo (忘れらんねえよ) ｜ Yani Neko  [iUpm4Xa2gM4].mp4')
-WORK = "/tmp/sm9"
+WORK = common.work("sm9")
 
 W = 1920
 PANEL_Y, PANEL_H = 700, 380  # from above the section labels down to the frame's edge

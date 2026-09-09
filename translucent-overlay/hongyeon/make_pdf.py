@@ -8,8 +8,14 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-WORK = "/tmp/sm"
-OUT = "/home/vonhoon/projects/scoremaker/홍연 어쿠스틱 기타 악보.pdf"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
+
+WORK = common.work("sm")
+OUT = common.out_pdf("홍연 어쿠스틱 기타 악보.pdf")
 
 TITLE = "홍연 어쿠스틱 기타 악보"
 SUBTITLE = "안예은 - 홍연"
@@ -30,19 +36,7 @@ INK = 0.15  # alpha at/above which a pixel counts as ink
 SOLID = 0.5
 DUP_TOLERANCE = 0.02
 
-CJK_VF = "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc"
-NANUM = "/usr/share/fonts/naver-nanum-gothic-fonts/NanumGothic%s.ttf"
-
-
-def font(size, weight="Regular"):
-    if os.path.exists(CJK_VF):
-        f = ImageFont.truetype(CJK_VF, size)
-        f.set_variation_by_name(weight)
-        return f
-    path = NANUM % ("" if weight == "Regular" else weight)
-    if os.path.exists(path):
-        return ImageFont.truetype(path, size)
-    raise SystemExit("no CJK font found")
+font = common.font  # resolves a CJK face per platform
 
 
 def load_systems():

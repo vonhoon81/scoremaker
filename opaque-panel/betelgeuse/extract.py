@@ -22,9 +22,12 @@ import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))  # where the source videos live
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
 VIDEO = os.path.join(ROOT, 'Yuuri - BETELGEUSE ｜ 일렉 기타 커버 타브 악보 노래방.mp4')
-WORK = "/tmp/sm4"
+WORK = common.work("sm4")
 
 PANEL_Y, PANEL_H = 650, 430  # the white tab panel; above it is the performance video
 BADGE = (120, 8, 140, 60)  # x, y, w, h of the three digits in the "Gt.123" badge

@@ -24,10 +24,16 @@ import sys
 import numpy as np
 from PIL import Image
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
+
 # the only source that is not kept beside the scripts
 VIDEO = os.path.expanduser(
     "~/다운로드/기타 1일차 vs 기타 10년차 ｜ 짱구 브금 [악보있음].mp4")
-WORK = "/tmp/sm2"
+WORK = common.work("sm2")
 
 BAND_Y, BAND_H = 858, 210  # the tab strip; below it is letterbox, above it is video
 N_STRINGS = 6

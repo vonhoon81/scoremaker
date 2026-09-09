@@ -12,6 +12,7 @@ line of rests, so those rows come out shorter. That is the score, not a defect.
 
 import glob
 import os
+import sys
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -19,7 +20,13 @@ from PIL import Image, ImageDraw, ImageFont
 import crop
 import extract
 
-OUT = "/home/vonhoon/projects/scoremaker/BETELGEUSE 기타 3파트 악보.pdf"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
+
+OUT = common.out_pdf("BETELGEUSE 기타 3파트 악보.pdf")
 TITLE = "BETELGEUSE (ベテルギウス) 기타 3파트 악보"
 SUB1 = "Yuuri · 일렉 기타 커버 · ♩= 90"
 SUB2 = ("Gt.1 — Capo On 3 Fret   |   Gt.2 · Gt.3 — Standard Tuning (E A D G B E)"
@@ -36,19 +43,7 @@ SLOT_GAP = round(9 / 25.4 * DPI)  # between systems
 
 BOOST = 1.25
 
-CJK_VF = "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc"
-NANUM = "/usr/share/fonts/naver-nanum-gothic-fonts/NanumGothic%s.ttf"
-
-
-def font(size, weight="Regular"):
-    if os.path.exists(CJK_VF):
-        f = ImageFont.truetype(CJK_VF, size)
-        f.set_variation_by_name(weight)
-        return f
-    path = NANUM % ("" if weight == "Regular" else weight)
-    if os.path.exists(path):
-        return ImageFont.truetype(path, size)
-    raise SystemExit("no CJK font found")
+font = common.font  # resolves a CJK face per platform
 
 
 def slots():

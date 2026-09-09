@@ -30,9 +30,12 @@ import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))  # where the source videos live
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
 VIDEO = os.path.join(ROOT, '【TAB譜】怪獣の花唄 Vaundy ギター 弾いてみた.mp4')
-WORK = "/tmp/sm6"
+WORK = common.work("sm6")
 
 W = 1920
 PANEL_Y, PANEL_H = 806, 274  # the white panel, constant for the whole video

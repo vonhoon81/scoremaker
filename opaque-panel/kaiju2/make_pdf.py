@@ -21,7 +21,13 @@ from PIL import Image, ImageDraw, ImageFont
 
 import stitch
 
-OUT = "/home/vonhoon/projects/scoremaker/괴수의 하나우타 기타 악보 v2.pdf"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
+
+OUT = common.out_pdf("괴수의 하나우타 기타 악보 v2.pdf")
 TITLE = "괴수의 하나우타 기타 악보"
 SUBTITLE = "Vaundy · 怪獣の花唄 · 137마디 전체 채보 · ♩=150"
 CREDIT = "출처: AironA 「【TAB譜】怪獣の花唄 Vaundy ギター 弾いてみた」"
@@ -38,19 +44,7 @@ BARS_PER_LINE = 4  # of a full-width (390px) bar; narrow rest bars pack tighter
 MAX_STRETCH = 1.18  # cap on how far a short line may be stretched to fill the width
 BOOST = 2.2  # the source draws staff lines at ~237 grey; pull them toward black
 
-CJK_VF = "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc"
-NANUM = "/usr/share/fonts/naver-nanum-gothic-fonts/NanumGothic%s.ttf"
-
-
-def font(size, weight="Regular"):
-    if os.path.exists(CJK_VF):
-        f = ImageFont.truetype(CJK_VF, size)
-        f.set_variation_by_name(weight)
-        return f
-    path = NANUM % ("" if weight == "Regular" else weight)
-    if os.path.exists(path):
-        return ImageFont.truetype(path, size)
-    raise SystemExit("no CJK font found")
+font = common.font  # resolves a CJK face per platform
 
 
 def darken(a):

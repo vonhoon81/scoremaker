@@ -16,7 +16,9 @@ import os
 
 import numpy as np
 
-WORK = "/tmp/sm5"
+import extract
+
+WORK = extract.WORK
 SOLID = 0.45
 DUP_IOU = 0.80  # above this at zero shift, two windows show the same passage
 MIN_OV, MAX_OV = 200, 1800

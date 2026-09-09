@@ -20,7 +20,13 @@ from PIL import Image, ImageDraw, ImageFont
 
 import stitch
 
-OUT = "/home/vonhoon/projects/scoremaker/사건의 지평선 기타 악보.pdf"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)  # the repo root, for common.py and the source videos
+
+import common  # noqa: E402
+
+OUT = common.out_pdf("사건의 지평선 기타 악보.pdf")
 TITLE = "사건의 지평선 기타 악보"
 SUBTITLE = "윤하 · A major · ♩=98 · 89마디 전체 채보"
 CREDIT = "출처: 「사건의 지평선 - 윤하 | 일렉기타 입문곡 시리즈 #022」"
@@ -45,19 +51,7 @@ NUM_GREY = (158, 158, 157)
 NUM_ROWS = (16, 27)  # rows the source draws its numbers on, 6 clear of the staff
 NUM_MID = 10  # numbers are centred on the barline, which sits this far into the crop
 
-CJK_VF = "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc"
-NANUM = "/usr/share/fonts/naver-nanum-gothic-fonts/NanumGothic%s.ttf"
-
-
-def font(size, weight="Regular"):
-    if os.path.exists(CJK_VF):
-        f = ImageFont.truetype(CJK_VF, size)
-        f.set_variation_by_name(weight)
-        return f
-    path = NANUM % ("" if weight == "Regular" else weight)
-    if os.path.exists(path):
-        return ImageFont.truetype(path, size)
-    raise SystemExit("no CJK font found")
+font = common.font  # resolves a CJK face per platform
 
 
 def whiten(a):

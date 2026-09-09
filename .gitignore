@@ -1,0 +1,12 @@
+# Source lesson videos, and the scores extracted from them. Neither is ours to
+# redistribute, and the largest video is 245 MB -- past GitHub's 100 MB file limit.
+*.mp4
+*.mkv
+*.webm
+*.pdf
+
+# Local Claude Code permissions
+.claude/
+
+__pycache__/
+*.py[cod]

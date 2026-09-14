@@ -5,8 +5,9 @@ as an overlay that holds still for a few seconds, flips to the next few bars, an
 This finds those still frames, composites each one into a clean image, works out how
 consecutive pages overlap, and re-engraves the whole thing into justified systems.
 
-Nine videos have been through it so far. Every one needed different constants, and three
-needed a different *method*. The point of this README is that the tenth should be faster.
+Ten videos have been through it so far. Every one needed different constants, and four
+needed a different *method*. The point of this README is that the eleventh should be
+faster.
 
 ---
 
@@ -18,6 +19,13 @@ pip install numpy pillow yt-dlp curl_cffi
 
 plus **ffmpeg** and **ffprobe** on `PATH` — every stage shells out to them.
 
+Keep **yt-dlp** current. A build more than a few months old loses whichever YouTube
+player client still serves unsigned URLs and dies at `HTTP Error 403` on every format,
+which looks exactly like the `curl_cffi` failure described below but is not. `pip install -U
+yt-dlp` fixed it. yt-dlp also now warns that it wants a JavaScript runtime (deno by
+default) and that *some formats may be missing* without one; the 1080p video-only format
+still came through fine without it.
+
 `download.py` on its own needs only `yt-dlp` and `curl_cffi`: it deliberately does not
 pull in numpy or Pillow, so fetching a video works on a bare machine.
 
@@ -26,7 +34,7 @@ pull in numpy or Pillow, so fetching a video works on a bare machine.
 | `numpy` | all the image maths |
 | `pillow` | reading/writing frames, drawing the title block, writing the PDF |
 | `yt-dlp` | `download.py` |
-| `curl_cffi` | lets yt-dlp impersonate a browser; **without it YouTube serves 20 MiB and then answers HTTP 403.** Retries, smaller chunks and fresh URLs all hit the same wall, and hammering it gets the IP blocked for about ten minutes |
+| `curl_cffi` | lets yt-dlp impersonate a browser; **without it YouTube serves 20 MiB and then answers HTTP 403.** Retries, smaller chunks and fresh URLs all hit the same wall, and hammering it gets the IP blocked for about ten minutes. **Pin it below 0.16** -- yt-dlp only accepts `0.5.10` and `0.10.x`-`0.15.x`, and a plain `pip install curl_cffi` now lands 0.16, which it rejects with *"Impersonate target chrome is not available"* even though the package is installed. `pip install 'curl_cffi>=0.10,<0.16'` |
 | `ffmpeg` / `ffprobe` | frame extraction and metadata |
 
 A CJK font is needed for the title block (Korean and Japanese). Found automatically:
@@ -116,6 +124,11 @@ What it does under the hood, and why:
 - **Already-downloaded videos are matched by id**, not by name, because a video's title
   can change upstream and re-fetching 200 MB to discover that would be rude. Pass
   `--force` to download anyway.
+- **The name it prints can be in NFD.** yt-dlp wrote the 하루베이스 video's Korean title with the
+  syllables decomposed, so the `VIDEO = common.video("...")` line it suggests cannot be
+  retyped by hand — an NFC literal that looks identical will not open the file. Copy the
+  bytes, or glob the `[id]` out of the repo root, which is what matching by id already
+  does.
 
 A cheap trick when deciding whether a video is worth downloading at all: storyboard
 frames (`yt-dlp -f sb0`) come from `i.ytimg.com`, are never throttled, and show the
@@ -175,7 +188,7 @@ was originally got wrong by trusting a number instead of looking at the picture.
 |---|---|---|
 | Download at 1080p, name the file deterministically across OSes | `download.py` | reliable |
 | Video metadata, sample frames, temporal-median image | `probe.py` | reliable |
-| **Staff geometry** — rows, spacing, line count, top-or-bottom | `probe.py` | exact on 3 of the 4 videos tested; on Creep it locked onto every *other* line and reported half the count at double the spacing, so check it against `static.png` |
+| **Staff geometry** — rows, spacing, line count, top-or-bottom | `probe.py` | exact on 3 of the 5 videos tested; on Creep it locked onto every *other* line and reported half the count at double the spacing, and on the `harrubass` bass tab it found **one** line and gave up. Always check it against `static.png` — see *when the staff finder gives up* below |
 | **Panel polarity** — dark ink on light, or light on dark | `probe.py` | exact on all four |
 | **Smooth scroll vs page flips** | `probe.py` | decisive. Correlates the band with itself 0.2s later, well inside a page: a shift of 0 means static pages |
 | Page compositing, once the constants are right | `extract.py` | reliable |
@@ -264,6 +277,7 @@ depends on whether the room moves:
 | `jjanggu/` | bottom strip | dark | flips every few seconds | where the guitar body glows through, the overlay's contrast is scaled down, so every mark's top-hat response is divided by a per-column staff-line reference that measures that attenuation exactly. *Source video is outside the repo.* |
 | `pretender/` | bottom | dark | flips, and **jumps**: a segno, a D.S. al Coda and practice loops (12x, 8x, 9x) | pages are grouped into **runs** — stretches flipped through without a jump — and the runs are registered into one **panorama**. Single pages cannot be placed: the riff repeats enough that one page matches several positions. 62 bars written, 58 bar boxes (a five-bar multi-rest). |
 | `nanmonee/` | bottom | dark | flips **straight through**, ~4 of the 7 bars a page shows | chord symbols sit *above* the panel over live video. 115 bars. |
+| `harrubass/` | bottom | none -- ink straight over the video | flips to a **fresh** page, **no overlap at all** | a four-line **bass** tab, and the only translucent chart here that *concatenates*. The studio is black, so the ink separates almost perfectly and the page split reaches 208:1. No bar numbers and no repeat signs anywhere. 125 bars. **Named for a channel, not a song** — see below. |
 
 ---
 
@@ -305,7 +319,8 @@ rather than chasing it.
 
 ### Joining pages, in order of how much machinery it takes
 
-1. **Concatenate** — pages do not overlap at all (`kaiju`, `betelgeuse`).
+1. **Concatenate** — pages do not overlap at all (`kaiju`, `betelgeuse`, `harrubass`).
+   Not only the opaque family: check every chart for this before assuming otherwise.
 2. **Complete bars only** — pages overlap by exactly the partial bar at the edge, so
    keeping bars with a barline on both sides is enough (`kaiju2`). This is what makes the
    apparent "repeat of the last bar at every scroll" disappear.
@@ -328,6 +343,131 @@ Panorama gotchas, both of which produced visibly wrong output first:
   the median and greys out everything they touch.
 - Inset each page's own edges (~12px) before it contributes: a glyph the page edge cut in
   half would otherwise outvote the pages that show it whole.
+
+### One directory is a channel, not a song
+
+`harrubass/` is the exception to the one-directory-per-song rule. 하루베이스
+(`@harrubass`, youtube.com/channel/UCzGjV-2jL1iLZLojqubPygw) numbers its uploads
+("405. ...") and uses a single layout across all of them, so the pipeline is the
+channel's, and a new video from it changes only a `PER-SONG` block of three constants in
+`extract.py` (`VIDEO`, `WORK`, `MUSIC`) plus the title block in `make_pdf.py`. Everything
+below that line — band rows, staff geometry, the barline and page-junction rules — is the
+channel's template and was measured once.
+
+Worth copying the idea if another source turns out to be a series: the per-video work
+collapses to reading one timestamp pair, and the bar-timing table in `stitch.py` is
+enough to tell you when a video has broken the template and needs re-measuring.
+
+### Not every translucent chart overlaps — check before reaching for the panorama
+
+The README's own framing invites the mistake: the opaque family concatenates, the
+translucent family registers. `harrubass` is translucent and concatenates. Each of its
+pages is a self-contained system of complete bars justified to fill the staff, sharing
+nothing with its neighbours, and copying Nanmonee's panorama onto it produced garbage.
+
+What makes this worth a section is that **registration does not fail loudly**. It
+returned an offset for every consecutive pair and a plausible-looking run structure; the
+offsets were just nonsense, alternating between ~0 and a full page width. The tells:
+
+- **every** pair scores badly. Ordinary flips come in under 0.05 and real jumps at 0.14;
+  a chart with nothing to match on scores 0.25–0.5 across the board, with no clean
+  split between the two populations.
+- the non-zero offsets cluster at the page width rather than at a fraction of it.
+- consecutive pages carry **no shared bar**. This is the check to run first, and it is
+  a look, not a number: put two consecutive pages one above the other and see whether
+  any bar appears in both. Here a tie settled it in one glance — the page ends on a tied
+  note and the next page opens with that note bracketed as a continuation, *at its first
+  bar*, which is exactly what no overlap looks like.
+
+If the pages concatenate, throw the whole `offsets`/`panorama` pair away rather than
+special-casing it. What replaces them is `np.hstack` of each page's staff span.
+
+### When the staff finder gives up
+
+`probe.py` wants rows that are uniform full-width lines, which is a fair description of
+a staff drawn on a panel and a poor one of a staff drawn straight over a moving video.
+On the `harrubass` tab it reported a single line out of four and refused to go on. Two
+causes,
+both worth recognising:
+
+- **a translucent staff is only uniform where the background is.** The temporal median
+  still shows the lines clearly; they just fail `UNIFORM`.
+- **`staff_lines` needs four in an even run, and a bass tab only has four**, so one
+  missed line takes it below the floor that a six-line guitar staff has slack for.
+
+Measuring them by hand takes a minute and is exact: take the row profile of
+`static.png` across the columns the staff spans, and the lines are the rows that spike.
+Weight each spike's rows by brightness for a sub-pixel centre. Four spikes came out at
+852.4 / 879.0 / 905.6 / 932.2 — dead even at 26.59px, which is itself the confirmation
+that the right rows were found. Then hand `PANEL_Y`, `PANEL_H`, `STAFF_*` to the
+pipeline and let `probe.py`'s *other* answers (polarity, scroll-vs-flip, the ink sweep)
+run off the band you measured, which is what `/tmp/probe2.py`-style throwaway does.
+
+Also worth knowing: the ink sweep can be *much* better than the worked examples suggest.
+Against a black studio, `harrubass` separated a page flip from a quiet frame at 208:1,
+where Nanmonee managed 4.3:1. A chart that looks hard because it is translucent can be
+the easiest one yet.
+
+### Barlines: measure the span as a fraction, not as a run
+
+`barline_cols` originally asked for one unbroken dark run from the top staff line to the
+bottom, bridging 1–2px nicks first. On a four-line bass staff the gaps between lines are
+26px rather than 18, the engraving is thin, and background subtraction left barlines
+broken in two or three places at once — `BRIDGE` closes a 1px gap per pass and cannot
+close a 2px one at all, so two thirds of the barlines went undetected and pages came back
+with one barline where they plainly had three.
+
+Asking instead that a column be dark over **90% of the staff's rows** found every one,
+on every page, with no bridging step. It needs one guard, because a note stem passing
+through the staff also darkens most of it:
+
+- **a real barline is 2–9px wide; a stem is exactly 1.** Rejecting single-column groups
+  removed every false positive and kept every true one. Measure the group's width, not
+  its darkness — the spurious ones were just as dark.
+
+The other half of the guard is free: a stem reaches far below the staff (to row 203+ here)
+while a barline stops at it, so extent is a second signal if width is ever not enough.
+
+### Verifying an assembly with no bar numbers on it
+
+The README's best check — read the bar numbers off the assembled score and confirm they
+run 1..N — needs the chart to print bar numbers. The 하루베이스 charts print none. The
+substitute,
+which caught two real findings:
+
+**A page's time on screen is proportional to how many bars it shows.** The display
+advances when the bars it is showing have been played, so seconds-per-bar is a constant
+of the video, and every page has to agree on it. Print the table and read down the last
+column. Here 28 of 32 pages agreed at 1.20–1.35s, which
+- fixes the tempo as a by-product: 1.30s/bar is ♩=185 in 4/4, and
+- makes the four that disagree mean something specific.
+
+Two pages read 2.55 and 2.60s/bar — exactly double. Those had been held for two page
+lengths, so their four bars are *played twice* and the flip between the two showings went
+undetected because the two renderings are pixel-identical. That is the play-order finding
+for this chart, and nothing on the page says it; only the timing does. One page read 1.85
+because the tab appears before the music starts, and one page genuinely shows two bars
+rather than four and read a correct 1.30.
+
+Two cross-checks on top, both of which have to agree: total bars written (125) against
+seconds of score on screen over seconds per bar (133 — the difference is exactly the two
+four-bar stretches played twice), and the last page ending on a real closing double bar
+rather than running out of video.
+
+Beware one trap in the table itself: attribute a bar to a page by its **midpoint**, not
+its left edge. A page's closing barline can sit a few px short of the page's right edge,
+and counting on left edges lends that bar to the wrong page — which showed up as pairs of
+pages reading 5 bars and 3 bars where both had four.
+
+### Junction barlines, when the source draws them inconsistently
+
+A chart whose pages concatenate has a barline at every page junction by definition, but
+this source draws one at a page's right edge only about half the time and never at the
+left. Drawing one in unconditionally is wrong in the other direction: where the source
+*did* close the page, its line and the redrawn one sit ~7px apart and print as a double
+bar the music does not have. Draw the line only where a search either side of the
+junction finds none — and do it in `stitch.py`, which can see both sides, not in
+`extract.py`, which renders each page alone.
 
 ### Compare masks against each other's dilation
 
@@ -384,7 +524,7 @@ would register every *frame* into a panorama instead of every page.
 
 Under the system temp directory: `sm` hongyeon · `sm2` jjanggu · `sm3` kaiju ·
 `sm4` betelgeuse · `sm5` creep · `sm6` kaiju2 · `sm7` horizon · `sm8` pretender ·
-`sm9` nanmonee · `probe` probe.py.
+`sm9` nanmonee · `sm10` harrubass · `probe` probe.py.
 
 ## What is not in the repo
 

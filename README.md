@@ -1,12 +1,13 @@
 # scoremaker
 
-Turns a guitar-lesson video into a printable A4 tab score. The lesson videos show the tab
+Turns an instrument-lesson video into a printable A4 score -- guitar and bass tab, and
+drum notation. The lesson videos show the tab
 as an overlay that holds still for a few seconds, flips to the next few bars, and repeats.
 This finds those still frames, composites each one into a clean image, works out how
 consecutive pages overlap, and re-engraves the whole thing into justified systems.
 
-Ten videos have been through it so far. Every one needed different constants, and four
-needed a different *method*. The point of this README is that the eleventh should be
+Eleven videos have been through it so far. Every one needed different constants, and
+five needed a different *method*. The point of this README is that the twelfth should be
 faster.
 
 ---
@@ -256,6 +257,7 @@ dark one, and the **median** when neither works.
 | `betelgeuse/` | bottom | white, dark ink | flips a system at a time, **no overlap** | the song is played three times, once per guitar part; the passes flip at the same offsets, which is what lets them be stacked into one score. |
 | `creep/` | bottom | black, white ink | steps ~2 bars at a time, **overlapping** | the layout *switches*: one full-width panel for most of it, two side-by-side panels through the both-guitars chorus, each its own stream of pages. |
 | `horizon/` | **top** | light, dark ink | flips with a **variable** overlap (0-2 bars) | notation staff + Korean lyrics + chords + tab, 438px tall. Plays a **repeat** — bars 26-56 twice — so pages split into two passes that have to be merged. 89 bars. |
+| `atthedrum/` | bottom | white, dark ink | flips to a **fresh** page, **no overlap** | the first **drum** chart here: five-line notation, not tab. A blue box highlights the beat and is disposed of by taking the *brightest* channel; a lyric row under the staff is trimmed off; a 3-bar multi-rest makes bar boxes disagree with bar numbers. Opens on a 26.6s title card. **Named for a channel.** 77 bars. |
 
 ### `translucent-overlay/` — the video shows through
 
@@ -344,9 +346,9 @@ Panorama gotchas, both of which produced visibly wrong output first:
 - Inset each page's own edges (~12px) before it contributes: a glyph the page edge cut in
   half would otherwise outvote the pages that show it whole.
 
-### One directory is a channel, not a song
+### Two directories are channels, not songs
 
-`harrubass/` is the exception to the one-directory-per-song rule. 하루베이스
+`harrubass/` and `atthedrum/` are the exceptions to the one-directory-per-song rule. 하루베이스
 (`@harrubass`, youtube.com/channel/UCzGjV-2jL1iLZLojqubPygw) numbers its uploads
 ("405. ...") and uses a single layout across all of them, so the pipeline is the
 channel's, and a new video from it changes only a `PER-SONG` block of three constants in
@@ -354,9 +356,93 @@ channel's, and a new video from it changes only a `PER-SONG` block of three cons
 below that line — band rows, staff geometry, the barline and page-junction rules — is the
 channel's template and was measured once.
 
-Worth copying the idea if another source turns out to be a series: the per-video work
-collapses to reading one timestamp pair, and the bar-timing table in `stitch.py` is
-enough to tell you when a video has broken the template and needs re-measuring.
+`atthedrum/` (@atthedrum) is the same arrangement for drums, and confirms the idea is
+worth repeating: its `PER-SONG` block is `VIDEO`, `WORK` and `MUSIC` too, with the title
+block in `make_pdf.py`. For it, `MUSIC` is the only one that genuinely has to be
+re-measured per video, because the length of the opening title card varies.
+
+Worth copying whenever a source turns out to be a series: the per-video work collapses to
+reading one timestamp pair, and the bar-timing table in `stitch.py` is enough to tell you
+when a video has broken the template and needs re-measuring.
+
+### Find the score's time window from the panel, never from the flip detector
+
+`atthedrum` opens on 26.6 seconds of full-screen cover art. The fades into and out of
+that card move more of the frame than a page flip does, so `probe.py` reported flips at
+1.8, 6.0, 12.0, 24.0 and 25.4s, none of which exist. Every one of those would have become
+a "page" of artwork, and worse, they drag the median page length around and so corrupt
+the seconds-per-bar constant that the whole verification rests on.
+
+Find the window from a property of the panel rather than from change: step the video at
+5fps and ask when the band's **median brightness** sits at the panel's own level. One
+pass, no thresholds to tune, and it gives a hard answer — 26.6s to 205.6s here, after
+which the flips inside it came out at a metronomic 9.2-9.4s apart. The README already
+said to clamp the scanned range; the point is that the clamp is measurable, not eyeballed.
+
+### Pick the channel reduction to erase the highlight, before any temporal statistic
+
+Every earlier chart reduced colour to grey by which ink it had: `.max(axis=2)` for white
+ink, `.min(axis=2)` for dark ink on white. `atthedrum` is dark ink on white and still
+wants `.max(axis=2)`, because what needs erasing is not the ink but the **blue box that
+highlights the beat being played**. The box is (0, 80, 200): its brightest channel is 200,
+so under `.max` it reads as light and vanishes, while the engraving is black in all three
+channels and survives. The temporal median then only has to deal with what the box leaves.
+
+The general form: choose the reduction that makes the *transient* unlike the ink, not the
+one that makes the ink darkest. Check what it costs first — here it costs nothing, because
+the only saturated pixels anywhere in the band are the 487 belonging to the box.
+
+And do not chase the grey noteheads that come out of it. They are ghost notes, grey in the
+source; both reductions agree on them, which is the test.
+
+### Cutting a page at the staff's last pixel throws the barline away
+
+Pages that concatenate are cut at the staff's own ends. `atthedrum`'s staff runs to
+x=1893 and its closing barline is drawn at x=1893-1895, so cutting at 1894 kept exactly
+one column of it. One column then fails the minimum-width guard that rejects note stems,
+and **every page's closing bar boundary disappeared** — 76 bars came back as 55, with
+boxes up to 1759px wide swallowing whole pages.
+
+It fails quietly because the per-page detector, run on the uncut page, still finds all
+four barlines; only the concatenated strip is wrong. Cut a few px *past* the staff's last
+pixel, and sanity-check the bar count per page against the same count taken before the
+cut.
+
+### Reconciling a multi-bar rest with bar numbers, instead of giving up on them
+
+The README's existing advice is to print no per-line bar range when the score has
+multi-bar rests, because bar *boxes* then disagree with bar *numbers*. On a 77-bar drum
+chart with no numbers printed anywhere that is a real loss, and the disagreement can be
+resolved rather than avoided:
+
+- seconds-per-bar is a constant of the video, so take the **median** of (page duration /
+  boxes on that page) across all pages. The pages with multi-rests are a minority and the
+  median ignores them.
+- a page's *music* bars are then its time on screen over that constant, rounded.
+- where a page has fewer boxes than music bars, the difference belongs to its multi-rest,
+  which is found by looking for a long horizontal run inside the box.
+
+Here that turned 75 boxes into 77 bars, and the independent check agreed: 179s on screen
+over 2.35s per bar is 76, against 77 counted, the one-bar gap being the panel coming up
+before the music starts. Both remaining disagreements printed by `stitch.py` are explained
+(the lead-in, and a final box the video does not hold for a full bar) rather than hidden.
+
+One trap: the multi-rest test looks for a long horizontal dark run, and **a staff line is
+exactly that**. Testing every row inside the staff marked all 55 bars as multi-rests. Test
+only the rows between the drawn lines.
+
+### A lyric row moves when the notation under the staff goes away
+
+`atthedrum` prints lyrics beneath the staff. They are excluded by where `PANEL_H` stops —
+notation ends at frame row 1016 and the lyrics start at 1025 — which holds on 18 of 19
+pages. On the page that is a multi-bar rest there is no notation below the staff at all,
+and the engraver raises the lyric line to row 999, well inside the band.
+
+So a fixed cut is not enough on its own. Back it with an adaptive one: below the staff,
+find a clear horizontal gap that has ink underneath it, and drop everything past the gap.
+A page whose notation simply reaches the bottom of the band has no such gap and is left
+alone. Worth trimming rather than keeping: the lyric row is a sixth of the band's height,
+and on a drum chart that is a sixth of the printed size for the same page count.
 
 ### Not every translucent chart overlaps — check before reaching for the panorama
 
@@ -524,7 +610,7 @@ would register every *frame* into a panorama instead of every page.
 
 Under the system temp directory: `sm` hongyeon · `sm2` jjanggu · `sm3` kaiju ·
 `sm4` betelgeuse · `sm5` creep · `sm6` kaiju2 · `sm7` horizon · `sm8` pretender ·
-`sm9` nanmonee · `sm10` harrubass · `probe` probe.py.
+`sm9` nanmonee · `sm10` harrubass · `sm11` atthedrum · `probe` probe.py.
 
 ## What is not in the repo
 

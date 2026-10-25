@@ -56,7 +56,10 @@ def post(pdf, relpath):
     ).encode("utf-8") + data + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(
         f"{BASE}/upload?p=", data=body, method="POST",
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        # Cloudflare in front of the drive answers urllib's default User-Agent with
+        # "403: error code 1010", so name ourselves.
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
+                 "User-Agent": "scoremaker-upload/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             return json.load(r)

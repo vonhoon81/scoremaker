@@ -68,6 +68,12 @@ python stitch.py      # pages  -> the score, in order, bars located
 python make_pdf.py    # bars   -> ../../<song> 악보.pdf
 ```
 
+Once the score is verified, file it on the band's drive (see *Filing the finished score*):
+
+```
+python upload.py "<song> 악보.pdf" --artist "<artist>" --song "<song>"
+```
+
 `extract.py` caches its scan and its pages, so re-running `stitch.py` or `make_pdf.py`
 after a tweak is free. Delete the scratch directory to force a re-extract.
 
@@ -234,7 +240,7 @@ was originally got wrong by trusting a number instead of looking at the picture.
    whether a label came out too faint, and how big to print it (`LINES_PER_PAGE` trades
    readability against page count). All visual calls.
 
-6. **Name the score and file it.** Also the agent's call.
+6. **Name the score and file it.** Also the agent's call — see *Filing the finished score*.
 
 ---
 
@@ -605,6 +611,30 @@ correlation test. If a video really does scroll, none of the stitching here appl
 would register every *frame* into a panorama instead of every page.
 
 ---
+
+## Filing the finished score
+
+Finished scores live in the band's sheet-music folder on the Koala Cloud drive, at
+`악보모음/<artist>/<song>.pdf`
+([browse](https://drive.koalarepublic.top/?path=band_stuff%2F%EC%95%85%EB%B3%B4%EB%AA%A8%EC%9D%8C)).
+`upload.py` puts one there, creating the artist folder if needed:
+
+```
+python upload.py "<song> 악보.pdf" --artist "<artist>" --song "<song>"
+python upload.py <pdf> --artist <artist> --song <song> --dry-run   # show the destination only
+```
+
+- It uses the folder's public upload endpoint, so no login and no secrets in this repo.
+  The same endpoint **never overwrites**: a second upload under the same name is filed as
+  `<song> (1).pdf`, and nothing can be deleted through it. Replacing a score means
+  asking the owner to delete the old one.
+- Names are NFC-normalised first. A song name copied out of an NFD filename from yt-dlp
+  would otherwise make a second artist folder that looks identical to the first.
+- Name by artist and song as the band knows them, not by the video title: drop
+  `【TAB】`, "기타 커버", lesson numbers. A part of a multi-part score says so, e.g.
+  `혜성 (베이스)`. Check the existing artist folders for a spelling already in use.
+- Standard library only, like `download.py`. Cloudflare in front of the drive rejects
+  urllib's default User-Agent (`403: error code 1010`), which is why it sends its own.
 
 ## Scratch directories
 
